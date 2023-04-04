@@ -10,6 +10,9 @@
   uci_add_call_handler
   uci_screen_state
   uci_set_current_ssid
+  uci_get_user_property_int_mm
+  uci_add_user_listener
+  ntf_add_listener
   s2s_freeze_coords
   ntf_camera_started
   ntf_camera_stopped
