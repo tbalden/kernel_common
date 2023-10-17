@@ -2597,3 +2597,6 @@
   ntf_is_screen_on
   ntf_set_cam_flashlight
   ntf_wake_by_user
+  uci_get_user_property_int_mm
+  uci_add_user_listener
+  ntf_add_listener
