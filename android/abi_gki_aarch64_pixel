@@ -2587,3 +2587,13 @@
   zs_map_object
   zs_pool_stats
   zs_unmap_object
+  uci_add_call_handler
+  uci_screen_state
+  uci_set_current_ssid
+  s2s_freeze_coords
+  ntf_camera_started
+  ntf_camera_stopped
+  ntf_is_camera_on
+  ntf_is_screen_on
+  ntf_set_cam_flashlight
+  ntf_wake_by_user
