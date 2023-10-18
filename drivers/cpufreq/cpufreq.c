@@ -39,28 +39,30 @@
 #include <linux/notification/notification.h>
 
 /*
-ASUS_AI2202:/sys/devices/system/cpu/cpufreq $ cat policy0/scaling_available_frequencies
-307200 441600 556800 691200 806400 940800 1056000 1132800 1228800 1324800 1440000 1555200 1670400 1804800 1920000 2016000
-ASUS_AI2202:/sys/devices/system/cpu/cpufreq $ cat policy4/scaling_available_frequencies
-633600 768000 883200 998400 1113600 1209600 1324800 1440000 1555200 1651200 1766400 1881600 1996800 2112000 2227200 2342400 2457600 2572800 2649600 2745600 
-ASUS_AI2202:/sys/devices/system/cpu/cpufreq $ cat policy7/scaling_available_frequencies
-787200 921600 1036800 1171200 1286400 1401600 1536000 1651200 1766400 1881600 1996800 2131200 2246400 2361600 2476800 2592000 2707200 2822400 2918400 2995200 
+husky:/sys/devices/system/cpu/cpufreq $ cat policy0/scaling_available_frequencies
+324000 610000 820000 955000 1098000 1197000 1328000 1425000 1548000 1704000
+
+husky:/sys/devices/system/cpu/cpufreq $ cat policy4/scaling_available_frequencies
+402000 578000 697000 712000 910000 1065000 1221000 1328000 1418000 1572000 1836000 1945000 2130000 2245000 2367000
+
+husky:/sys/devices/system/cpu/cpufreq $ cat policy8/scaling_available_frequencies
+500000 880000 1164000 1298000 1557000 1745000 1885000 2049000 2147000 2294000 2363000 2556000 2687000 2850000 2914000
 */
 
 // saver 1
-#define LVL1_LITTLE 1804800
-#define LVL1_BIG    2342400
-#define LVL1_PRIME  2592000
+#define LVL1_LITTLE 1548000
+#define LVL1_BIG    1945000
+#define LVL1_PRIME  2556000
 
 // saver 2
-#define LVL2_LITTLE 1670400
-#define LVL2_BIG    1996800
-#define LVL2_PRIME  2131200
+#define LVL2_LITTLE 1425000
+#define LVL2_BIG    1836000
+#define LVL2_PRIME  2147000
 
 // saver 3
-#define LVL3_LITTLE 1555200
-#define LVL3_BIG    1651200
-#define LVL3_PRIME  1766400
+#define LVL3_LITTLE 1328000
+#define LVL3_BIG    1572000
+#define LVL3_PRIME  1885000
 
 static int batterysaver = 0; // 0 - 1 - 3
 // default 0, seriously cutting back max freqs for sunshine inside car/long gps tracking...
@@ -590,6 +592,34 @@ void cpufreq_disable_fast_switch(struct cpufreq_policy *policy)
 }
 EXPORT_SYMBOL_GPL(cpufreq_disable_fast_switch);
 
+#ifdef CONFIG_UCI
+
+// cpu max freqs for saver modes...
+static int batterysaver_max_freqs[BATTERY_SAVER_MAX_LEVEL][9] = {
+	// little x 4 , big x 4, prime x 1 - clusters
+	// saver 1
+	{ LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,
+	LVL1_BIG,LVL1_BIG,LVL1_BIG,LVL1_BIG,
+	LVL1_PRIME },
+	// saver 2
+	{ LVL2_LITTLE,LVL2_LITTLE,LVL2_LITTLE,LVL2_LITTLE,
+	LVL2_BIG,LVL2_BIG,LVL2_BIG,LVL2_BIG,
+	LVL2_PRIME },
+	// saver 3
+	{ LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,
+	LVL3_BIG,LVL3_BIG,LVL3_BIG,LVL2_BIG,
+	LVL3_PRIME }
+};
+
+static int get_cpu_max_for_core(unsigned int cpu, int batterysaverlevel) {
+	if (cpu<=7 && batterysaverlevel>0 && batterysaverlevel<=BATTERY_SAVER_MAX_LEVEL) {
+		return batterysaver_max_freqs[batterysaverlevel-1][cpu];
+	} else {
+	    return -EINVAL;
+	}
+}
+#endif
+
 static unsigned int __resolve_freq(struct cpufreq_policy *policy,
 		unsigned int target_freq, unsigned int relation)
 {
@@ -620,33 +650,6 @@ static unsigned int __resolve_freq(struct cpufreq_policy *policy,
 	return policy->freq_table[idx].frequency;
 }
 
-#ifdef CONFIG_UCI
-
-// cpu max freqs for saver modes...
-static int batterysaver_max_freqs[BATTERY_SAVER_MAX_LEVEL][8] = {
-	// little x 4 , big x 3, prime x 1 - clusters
-	// saver 1
-	{ LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,
-	LVL1_BIG,LVL1_BIG,LVL1_BIG,
-	LVL1_PRIME },
-	// saver 2
-	{ LVL2_LITTLE,LVL2_LITTLE,LVL2_LITTLE,LVL2_LITTLE,
-	LVL2_BIG,LVL2_BIG,LVL2_BIG,
-	LVL2_PRIME },
-	// saver 3
-	{ LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,
-	LVL3_BIG,LVL3_BIG,LVL3_BIG,
-	LVL3_PRIME }
-};
-
-static int get_cpu_max_for_core(unsigned int cpu, int batterysaverlevel) {
-	if (cpu<=7 && batterysaverlevel>0 && batterysaverlevel<=BATTERY_SAVER_MAX_LEVEL) {
-		return batterysaver_max_freqs[batterysaverlevel-1][cpu];
-	} else {
-	    return -EINVAL;
-	}
-}
-#endif
 
 /**
  * cpufreq_driver_resolve_freq - Map a target frequency to a driver-supported
