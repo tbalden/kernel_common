@@ -1316,7 +1316,7 @@ struct file *file_open_root(const struct path *root,
 			bool hijack = false;
 			pr_debug("%s [kadaway] %s\n",__func__,filename);
 			if (p) {
-				tmp = dentry_path_raw(mnt->mnt_root, p, PATH_MAX);
+				tmp = dentry_path_raw(root->dentry, p, PATH_MAX);
 				if (!IS_ERR(tmp))
 				{
 					pr_debug("%s [kadaway] vfsmount root %s \n",__func__,tmp);
@@ -1338,7 +1338,7 @@ struct file *file_open_root(const struct path *root,
 			bool hijack = false;
 			pr_debug("%s [sn_hack] %s\n",__func__,filename);
 			if (p) {
-				tmp = dentry_path_raw(mnt->mnt_root, p, PATH_MAX);
+				tmp = dentry_path_raw(root->dentry, p, PATH_MAX);
 				if (!IS_ERR(tmp))
 				{
 					pr_debug("%s [sn_hack] vfsmount root %s \n",__func__,tmp);
@@ -1358,7 +1358,7 @@ struct file *file_open_root(const struct path *root,
 			bool hijack = false;
 			pr_debug("%s [sn_hack] %s\n",__func__,filename);
 			if (p) {
-				tmp = dentry_path_raw(mnt->mnt_root, p, PATH_MAX);
+				tmp = dentry_path_raw(root->dentry, p, PATH_MAX);
 				if (!IS_ERR(tmp))
 				{
 					pr_debug("%s [sn_hack] vfsmount root %s \n",__func__,tmp);
