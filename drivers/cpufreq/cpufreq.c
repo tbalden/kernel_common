@@ -594,8 +594,10 @@ EXPORT_SYMBOL_GPL(cpufreq_disable_fast_switch);
 
 #ifdef CONFIG_UCI
 
+#define NUM_OF_CORES 9
+
 // cpu max freqs for saver modes...
-static int batterysaver_max_freqs[BATTERY_SAVER_MAX_LEVEL][9] = {
+static int batterysaver_max_freqs[BATTERY_SAVER_MAX_LEVEL][NUM_OF_CORES] = {
 	// little x 4 , big x 4, prime x 1 - clusters
 	// saver 1
 	{ LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,
@@ -607,12 +609,12 @@ static int batterysaver_max_freqs[BATTERY_SAVER_MAX_LEVEL][9] = {
 	LVL2_PRIME },
 	// saver 3
 	{ LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,
-	LVL3_BIG,LVL3_BIG,LVL3_BIG,LVL2_BIG,
+	LVL3_BIG,LVL3_BIG,LVL3_BIG,LVL3_BIG,
 	LVL3_PRIME }
 };
 
 static int get_cpu_max_for_core(unsigned int cpu, int batterysaverlevel) {
-	if (cpu<=7 && batterysaverlevel>0 && batterysaverlevel<=BATTERY_SAVER_MAX_LEVEL) {
+	if (cpu<=(NUM_OF_CORES-1) && batterysaverlevel>0 && batterysaverlevel<=BATTERY_SAVER_MAX_LEVEL) {
 		return batterysaver_max_freqs[batterysaverlevel-1][cpu];
 	} else {
 	    return -EINVAL;
