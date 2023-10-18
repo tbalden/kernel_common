@@ -825,7 +825,7 @@ static int find_and_kill_task(char *filter)
 				    }
 				    pr_info("%s FOUND! Process: %s\t PID:[%d]\t State:%s Path: %s\n",__func__,
 			                task_list->comm, task_list->pid,
-			                get_task_state(task_list->state), p);
+			                get_task_state(task_list->__state), p);
 				}
 	                    }
 	            }
