@@ -2600,3 +2600,4 @@
   uci_get_user_property_int_mm
   uci_add_user_listener
   ntf_add_listener
+  s2s_direct_input
