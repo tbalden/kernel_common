@@ -27,6 +27,14 @@
 #define FILTER_ONLY_AFTER_SOME_TOUCH_EVENTS
 
 
+// in case of drivers that filter touch events like with offload google input driver...
+#define DIRECT_INPUT
+
+#ifdef DIRECT_INPUT
+static int first_touch_id_down = 0;
+#endif
+
+
 //sweep2sleep
 #define S2S_PWRKEY_DUR         20
 
@@ -159,14 +167,15 @@ static int get_s2s_y_above(void) {
 }
 #endif
 
+extern bool machine_is_pro(void);
 
 // device specifics
 static void s2s_setup_values(void) {
-	if (true) {
-		pr_info("%s hw zf9\n",__func__);
+	if (machine_is_pro()) {
+		pr_info("%s hw pro version\n",__func__);
 		// leave original values
 	} else {
-                pr_info("%s hw ?\n",__func__);
+                pr_info("%s hw non pro version\n",__func__);
 		S2S_Y_MAX = 2400;
 		S2S_X_MAX = 1080;
 		S2S_X_LEFT_CORNER_END = 100;
@@ -661,8 +670,9 @@ static bool filtering_on(void) {
 }
 #endif
 
+
 static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
-				unsigned int code, int value) {
+				unsigned int code, int value, bool direct_input, unsigned char touchId) {
 	bool first_touch_detection = false;
 
 	if (!setup_done) {
@@ -685,7 +695,46 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 	if (log_throttling_count%50==49) log_throttling_count = 0;
 #endif
 
+#ifdef DIRECT_INPUT
+	if (!direct_input) { // in DIRECT_INPUT mode, real input device events shouldn't be processed, 
+		//as secondary s2s_direct_input_calls are called from driver also
+#ifdef FULL_FILTER
+		return filtering_on();
+#else
+		return false;
+#endif
+	}
+#endif
+
+#ifdef DIRECT_INPUT
+	if (touchId!=0) { // more than 1 finger down
+		touch_down_called = false;
+		touch_x_called = false;
+		touch_y_called = false;
+		sweep2sleep_reset(false);
+#ifdef CONFIG_DEBUG_S2S
+		pr_info("%s S2S_EVENT: untouch based on touch id...\n",__func__);
+#endif
+#ifdef FULL_FILTER
+		return filtering_on();
+#else
+		return false;
+#endif
+	}
+#endif
+
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
+#ifdef DIRECT_INPUT
+		if (first_touch_id_down) { // first touch id touch detection already done earlier... return here
+#ifdef FULL_FILTER
+			return filtering_on();
+#else
+			return false;
+#endif
+		}
+		first_touch_id_down = true; // first touch id (0) first time touch event from s2s_direct_input call
+#endif
+
 #ifdef FULL_FILTER
 		if (filtering_on()) {
 			in_gesture_finger_counter++;
@@ -736,6 +785,9 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
+#ifdef DIRECT_INPUT
+		first_touch_id_down = 0;
+#endif
 		reset_longtap_tracking();
 		if (last_tap_starts_in_dt_area) {
 			int delta_x = last_tap_coord_x - touch_x;
@@ -962,7 +1014,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 }
 static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
-	bool ret = __s2s_input_filter(handle,type,code,value);
+	bool ret = __s2s_input_filter(handle,type,code,value,false,0);
 #ifdef CONFIG_DEBUG_S2S
 	pr_info("%s [FILTER] fresult=%s , type: %d code: %d value: %d\n",__func__,ret?"TRUE":"FALSE",type,code,value);
 #endif
@@ -986,6 +1038,17 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 static void s2s_input_event(struct input_handle *handle, unsigned int type,
                                 unsigned int code, int value) {
 }
+
+void s2s_direct_input(struct input_handle *handle, unsigned int type, unsigned int code, int value, unsigned char touch_id) {
+#ifdef DIRECT_INPUT
+#ifdef CONFIG_DEBUG_S2S
+	pr_info("%s s2s direct t: %u c: %u v: %d   touchId: %u \n",__func__, type, code, value, touch_id);
+#endif
+	__s2s_input_filter(handle, type, code, value, true, touch_id);
+#endif
+}
+EXPORT_SYMBOL_GPL(s2s_direct_input);
+
 
 static void uci_sys_listener(void) {
 	if (!!uci_get_sys_property_int_mm("locked", 0, 0, 1)==false) {
@@ -1050,6 +1113,9 @@ static int input_dev_filter(struct input_dev *dev) {
 	if (strstr(dev->name, "synaptics_dsx")) {
 		return 0;
 	} else
+	if (strstr(dev->name, "synaptics_tcm_touch")) {
+		return 0;
+	} else
 	if (strstr(dev->name, "fts")) {
 		return 0;
 	} else
@@ -1062,6 +1128,7 @@ static int input_dev_filter(struct input_dev *dev) {
 	if (strstr(dev->name, "sec_touchscreen")) {
 		return 0;
 	} else {
+		pr_info("%s sweep2sleep device filter check. Device didn't match any! %s\n",__func__,dev->name);
 		return 1;
 	}
 }
