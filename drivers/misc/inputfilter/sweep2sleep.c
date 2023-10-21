@@ -31,6 +31,7 @@
 #define DIRECT_INPUT
 
 #ifdef DIRECT_INPUT
+static bool direct_input_driver = false; // set this true, if the ts driver uses s2s_direct_input
 static int first_touch_id_down = 0;
 #endif
 
@@ -696,6 +697,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 #endif
 
 #ifdef DIRECT_INPUT
+	if (direct_input_driver) // only do this part if direct_input is actually sent by ts driver like with fts driver
 	if (!direct_input) { // in DIRECT_INPUT mode, real input device events shouldn't be processed, 
 		//as secondary s2s_direct_input_calls are called from driver also
 #ifdef FULL_FILTER
@@ -707,6 +709,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 #endif
 
 #ifdef DIRECT_INPUT
+	if (direct_input_driver) // only do this part if direct_input is actually sent by ts driver like with fts driver
 	if (touchId!=0) { // more than 1 finger down
 		touch_down_called = false;
 		touch_x_called = false;
@@ -725,6 +728,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
 #ifdef DIRECT_INPUT
+		if (direct_input_driver)
 		if (first_touch_id_down) { // first touch id touch detection already done earlier... return here
 #ifdef FULL_FILTER
 			return filtering_on();
@@ -1117,15 +1121,27 @@ static int input_dev_filter(struct input_dev *dev) {
 		return 0;
 	} else
 	if (strstr(dev->name, "fts")) {
+#ifdef DIRECT_INPUT
+		direct_input_driver = true;
+		pr_info("%s set direct input true.\n",__func__);
+#endif
 		return 0;
 	} else
 	if (strstr(dev->name, "ftm")) {
+#ifdef DIRECT_INPUT
+		direct_input_driver = true;
+		pr_info("%s set direct input true.\n",__func__);
+#endif
 		return 0;
 	} else
 	if (strstr(dev->name, "touchpanel")) { // oneplus driver
 		return 0;
 	} else
 	if (strstr(dev->name, "sec_touchscreen")) {
+#ifdef DIRECT_INPUT
+		direct_input_driver = false;
+		pr_info("%s set direct input false.\n",__func__);
+#endif
 		return 0;
 	} else {
 		pr_info("%s sweep2sleep device filter check. Device didn't match any! %s\n",__func__,dev->name);
