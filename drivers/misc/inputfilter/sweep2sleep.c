@@ -1098,6 +1098,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s [screen_wake], setting screen on before touch events...\n",__func__);
 #endif
+		in_gesture_finger_counter = 0;
 		screen_on_but_before_touch_events = true;
 		screen_on_untouch_events_after = 0;
 	}
