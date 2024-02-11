@@ -605,58 +605,11 @@ static const struct NTFS_DE *hdr_insert_head(struct INDEX_HDR *hdr,
 	return e;
 }
 
-/*
- * index_hdr_check
- *
- * return true if INDEX_HDR is valid
- */
-static bool index_hdr_check(const struct INDEX_HDR *hdr, u32 bytes)
-{
-	u32 end = le32_to_cpu(hdr->used);
-	u32 tot = le32_to_cpu(hdr->total);
-	u32 off = le32_to_cpu(hdr->de_off);
-
-	if (!IS_ALIGNED(off, 8) || tot > bytes || end > tot ||
-	    off + sizeof(struct NTFS_DE) > end) {
-		/* incorrect index buffer. */
-		return false;
-	}
-
-	return true;
-}
-
-/*
- * index_buf_check
- *
- * return true if INDEX_BUFFER seems is valid
- */
-static bool index_buf_check(const struct INDEX_BUFFER *ib, u32 bytes,
-			    const CLST *vbn)
-{
-	const struct NTFS_RECORD_HEADER *rhdr = &ib->rhdr;
-	u16 fo = le16_to_cpu(rhdr->fix_off);
-	u16 fn = le16_to_cpu(rhdr->fix_num);
-
-	if (bytes <= offsetof(struct INDEX_BUFFER, ihdr) ||
-	    rhdr->sign != NTFS_INDX_SIGNATURE ||
-	    fo < sizeof(struct INDEX_BUFFER)
-	    /* Check index buffer vbn. */
-	    || (vbn && *vbn != le64_to_cpu(ib->vbn)) || (fo % sizeof(short)) ||
-	    fo + fn * sizeof(short) >= bytes ||
-	    fn != ((bytes >> SECTOR_SHIFT) + 1)) {
-		/* incorrect index buffer. */
-		return false;
-	}
-
-	return index_hdr_check(&ib->ihdr,
-			       bytes - offsetof(struct INDEX_BUFFER, ihdr));
-}
-
 void fnd_clear(struct ntfs_fnd *fnd)
 {
 	int i;
 
-	for (i = fnd->level - 1; i >= 0; i--) {
+	for (i = 0; i < fnd->level; i++) {
 		struct indx_node *n = fnd->nodes[i];
 
 		if (!n)
@@ -867,16 +820,9 @@ int indx_init(struct ntfs_index *indx, struct ntfs_sb_info *sbi,
 	u32 t32;
 	const struct INDEX_ROOT *root = resident_data(attr);
 
-	t32 = le32_to_cpu(attr->res.data_size);
-	if (t32 <= offsetof(struct INDEX_ROOT, ihdr) ||
-	    !index_hdr_check(&root->ihdr,
-			     t32 - offsetof(struct INDEX_ROOT, ihdr))) {
-		goto out;
-	}
-
 	/* Check root fields. */
 	if (!root->index_block_clst)
-		goto out;
+		return -EINVAL;
 
 	indx->type = type;
 	indx->idx2vbn_bits = __ffs(root->index_block_clst);
@@ -888,19 +834,19 @@ int indx_init(struct ntfs_index *indx, struct ntfs_sb_info *sbi,
 	if (t32 < sbi->cluster_size) {
 		/* Index record is smaller than a cluster, use 512 blocks. */
 		if (t32 != root->index_block_clst * SECTOR_SIZE)
-			goto out;
+			return -EINVAL;
 
 		/* Check alignment to a cluster. */
 		if ((sbi->cluster_size >> SECTOR_SHIFT) &
 		    (root->index_block_clst - 1)) {
-			goto out;
+			return -EINVAL;
 		}
 
 		indx->vbn2vbo_bits = SECTOR_SHIFT;
 	} else {
 		/* Index record must be a multiple of cluster size. */
 		if (t32 != root->index_block_clst << sbi->cluster_bits)
-			goto out;
+			return -EINVAL;
 
 		indx->vbn2vbo_bits = sbi->cluster_bits;
 	}
@@ -908,14 +854,7 @@ int indx_init(struct ntfs_index *indx, struct ntfs_sb_info *sbi,
 	init_rwsem(&indx->run_lock);
 
 	indx->cmp = get_cmp_func(root);
-	if (!indx->cmp)
-		goto out;
-
-	return 0;
-
-out:
-	ntfs_set_state(sbi, NTFS_DIRTY_DIRTY);
-	return -EINVAL;
+	return indx->cmp ? 0 : -EINVAL;
 }
 
 static struct indx_node *indx_new(struct ntfs_index *indx,
@@ -1073,13 +1012,6 @@ int indx_read(struct ntfs_index *indx, struct ntfs_inode *ni, CLST vbn,
 		goto out;
 
 ok:
-	if (!index_buf_check(ib, bytes, &vbn)) {
-		ntfs_inode_err(&ni->vfs_inode, "directory corrupted");
-		ntfs_set_state(ni->mi.sbi, NTFS_DIRTY_ERROR);
-		err = -EINVAL;
-		goto out;
-	}
-
 	if (err == -E_NTFS_FIXUP) {
 		ntfs_write_bh(ni->mi.sbi, &ib->rhdr, &in->nb, 0);
 		err = 0;
@@ -1674,9 +1606,9 @@ static int indx_insert_into_root(struct ntfs_index *indx, struct ntfs_inode *ni,
 
 	if (err) {
 		/* Restore root. */
-		if (mi_resize_attr(mi, attr, -ds_root)) {
+		if (mi_resize_attr(mi, attr, -ds_root))
 			memcpy(attr, a_root, asize);
-		} else {
+		else {
 			/* Bug? */
 			ntfs_set_state(sbi, NTFS_DIRTY_ERROR);
 		}

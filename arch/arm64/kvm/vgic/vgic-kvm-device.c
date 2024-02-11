@@ -46,7 +46,7 @@ int kvm_set_legacy_vgic_v2_addr(struct kvm *kvm, struct kvm_arm_device_addr *dev
 	struct vgic_dist *vgic = &kvm->arch.vgic;
 	int r;
 
-	mutex_lock(&kvm->arch.config_lock);
+	mutex_lock(&kvm->lock);
 	switch (FIELD_GET(KVM_ARM_DEVICE_TYPE_MASK, dev_addr->id)) {
 	case KVM_VGIC_V2_ADDR_TYPE_DIST:
 		r = vgic_check_type(kvm, KVM_DEV_TYPE_ARM_VGIC_V2);
@@ -68,7 +68,7 @@ int kvm_set_legacy_vgic_v2_addr(struct kvm *kvm, struct kvm_arm_device_addr *dev
 		r = -ENODEV;
 	}
 
-	mutex_unlock(&kvm->arch.config_lock);
+	mutex_unlock(&kvm->lock);
 
 	return r;
 }
@@ -102,11 +102,7 @@ static int kvm_vgic_addr(struct kvm *kvm, struct kvm_device_attr *attr, bool wri
 		if (get_user(addr, uaddr))
 			return -EFAULT;
 
-	/*
-	 * Since we can't hold config_lock while registering the redistributor
-	 * iodevs, take the slots_lock immediately.
-	 */
-	mutex_lock(&kvm->slots_lock);
+	mutex_lock(&kvm->lock);
 	switch (attr->attr) {
 	case KVM_VGIC_V2_ADDR_TYPE_DIST:
 		r = vgic_check_type(kvm, KVM_DEV_TYPE_ARM_VGIC_V2);
@@ -186,7 +182,6 @@ static int kvm_vgic_addr(struct kvm *kvm, struct kvm_device_attr *attr, bool wri
 	if (r)
 		goto out;
 
-	mutex_lock(&kvm->arch.config_lock);
 	if (write) {
 		r = vgic_check_iorange(kvm, *addr_ptr, addr, alignment, size);
 		if (!r)
@@ -194,10 +189,9 @@ static int kvm_vgic_addr(struct kvm *kvm, struct kvm_device_attr *attr, bool wri
 	} else {
 		addr = *addr_ptr;
 	}
-	mutex_unlock(&kvm->arch.config_lock);
 
 out:
-	mutex_unlock(&kvm->slots_lock);
+	mutex_unlock(&kvm->lock);
 
 	if (!r && !write)
 		r =  put_user(addr, uaddr);
@@ -233,7 +227,7 @@ static int vgic_set_common_attr(struct kvm_device *dev,
 		    (val & 31))
 			return -EINVAL;
 
-		mutex_lock(&dev->kvm->arch.config_lock);
+		mutex_lock(&dev->kvm->lock);
 
 		if (vgic_ready(dev->kvm) || dev->kvm->arch.vgic.nr_spis)
 			ret = -EBUSY;
@@ -241,16 +235,16 @@ static int vgic_set_common_attr(struct kvm_device *dev,
 			dev->kvm->arch.vgic.nr_spis =
 				val - VGIC_NR_PRIVATE_IRQS;
 
-		mutex_unlock(&dev->kvm->arch.config_lock);
+		mutex_unlock(&dev->kvm->lock);
 
 		return ret;
 	}
 	case KVM_DEV_ARM_VGIC_GRP_CTRL: {
 		switch (attr->attr) {
 		case KVM_DEV_ARM_VGIC_CTRL_INIT:
-			mutex_lock(&dev->kvm->arch.config_lock);
+			mutex_lock(&dev->kvm->lock);
 			r = vgic_init(dev->kvm);
-			mutex_unlock(&dev->kvm->arch.config_lock);
+			mutex_unlock(&dev->kvm->lock);
 			return r;
 		case KVM_DEV_ARM_VGIC_SAVE_PENDING_TABLES:
 			/*
@@ -266,10 +260,7 @@ static int vgic_set_common_attr(struct kvm_device *dev,
 				mutex_unlock(&dev->kvm->lock);
 				return -EBUSY;
 			}
-
-			mutex_lock(&dev->kvm->arch.config_lock);
 			r = vgic_v3_save_pending_tables(dev->kvm);
-			mutex_unlock(&dev->kvm->arch.config_lock);
 			unlock_all_vcpus(dev->kvm);
 			mutex_unlock(&dev->kvm->lock);
 			return r;
@@ -420,16 +411,14 @@ static int vgic_v2_attr_regs_access(struct kvm_device *dev,
 
 	mutex_lock(&dev->kvm->lock);
 
-	if (!lock_all_vcpus(dev->kvm)) {
-		mutex_unlock(&dev->kvm->lock);
-		return -EBUSY;
-	}
-
-	mutex_lock(&dev->kvm->arch.config_lock);
-
 	ret = vgic_init(dev->kvm);
 	if (ret)
 		goto out;
+
+	if (!lock_all_vcpus(dev->kvm)) {
+		ret = -EBUSY;
+		goto out;
+	}
 
 	switch (attr->group) {
 	case KVM_DEV_ARM_VGIC_GRP_CPU_REGS:
@@ -443,9 +432,8 @@ static int vgic_v2_attr_regs_access(struct kvm_device *dev,
 		break;
 	}
 
-out:
-	mutex_unlock(&dev->kvm->arch.config_lock);
 	unlock_all_vcpus(dev->kvm);
+out:
 	mutex_unlock(&dev->kvm->lock);
 
 	if (!ret && !is_write)
@@ -581,14 +569,12 @@ static int vgic_v3_attr_regs_access(struct kvm_device *dev,
 
 	mutex_lock(&dev->kvm->lock);
 
-	if (!lock_all_vcpus(dev->kvm)) {
-		mutex_unlock(&dev->kvm->lock);
-		return -EBUSY;
+	if (unlikely(!vgic_initialized(dev->kvm))) {
+		ret = -EBUSY;
+		goto out;
 	}
 
-	mutex_lock(&dev->kvm->arch.config_lock);
-
-	if (unlikely(!vgic_initialized(dev->kvm))) {
+	if (!lock_all_vcpus(dev->kvm)) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -623,9 +609,8 @@ static int vgic_v3_attr_regs_access(struct kvm_device *dev,
 		break;
 	}
 
-out:
-	mutex_unlock(&dev->kvm->arch.config_lock);
 	unlock_all_vcpus(dev->kvm);
+out:
 	mutex_unlock(&dev->kvm->lock);
 
 	if (!ret && uaccess && !is_write) {

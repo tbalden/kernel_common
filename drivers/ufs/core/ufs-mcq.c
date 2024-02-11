@@ -299,11 +299,11 @@ EXPORT_SYMBOL_GPL(ufshcd_mcq_poll_cqe_nolock);
 unsigned long ufshcd_mcq_poll_cqe_lock(struct ufs_hba *hba,
 				       struct ufs_hw_queue *hwq)
 {
-	unsigned long completed_reqs, flags;
+	unsigned long completed_reqs;
 
-	spin_lock_irqsave(&hwq->cq_lock, flags);
+	spin_lock(&hwq->cq_lock);
 	completed_reqs = ufshcd_mcq_poll_cqe_nolock(hba, hwq);
-	spin_unlock_irqrestore(&hwq->cq_lock, flags);
+	spin_unlock(&hwq->cq_lock);
 
 	return completed_reqs;
 }

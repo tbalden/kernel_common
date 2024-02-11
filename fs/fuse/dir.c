@@ -312,7 +312,7 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 			spin_unlock(&fi->lock);
 		}
 		kfree(forget);
-		if (ret == -ENOMEM || ret == -EINTR)
+		if (ret == -ENOMEM)
 			goto out;
 		if (ret || fuse_invalid_attr(&outarg.attr) ||
 		    fuse_stale_inode(inode, outarg.generation, &outarg.attr))
@@ -355,13 +355,8 @@ static void fuse_dentry_release(struct dentry *dentry)
 {
 	struct fuse_dentry *fd = dentry->d_fsdata;
 
-#ifdef CONFIG_FUSE_BPF
 	if (fd && fd->backing_path.dentry)
 		path_put(&fd->backing_path);
-
-	if (fd && fd->bpf)
-		bpf_prog_put(fd->bpf);
-#endif
 
 	kfree_rcu(fd, rcu);
 }
@@ -500,6 +495,7 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 	if (name->len > FUSE_NAME_MAX)
 		goto out;
 
+
 	forget = fuse_alloc_forget();
 	err = -ENOMEM;
 	if (!forget)
@@ -518,34 +514,32 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 
 		err = -ENOENT;
 		if (!entry)
-			goto out_put_forget;
+			goto out_queue_forget;
 
 		err = -EINVAL;
 		backing_file = bpf_arg.backing_file;
 		if (!backing_file)
-			goto out_put_forget;
+			goto out_queue_forget;
 
 		if (IS_ERR(backing_file)) {
 			err = PTR_ERR(backing_file);
-			goto out_put_forget;
+			goto out_queue_forget;
 		}
 
 		backing_inode = backing_file->f_inode;
 		*inode = fuse_iget_backing(sb, outarg->nodeid, backing_inode);
 		if (!*inode)
-			goto out_put_forget;
+			goto out;
 
 		err = fuse_handle_backing(&bpf_arg,
 				&get_fuse_inode(*inode)->backing_inode,
 				&get_fuse_dentry(entry)->backing_path);
-		if (!err)
-			err = fuse_handle_bpf_prog(&bpf_arg, NULL,
-					   &get_fuse_inode(*inode)->bpf);
-		if (err) {
-			iput(*inode);
-			*inode = NULL;
-			goto out_put_forget;
-		}
+		if (err)
+			goto out;
+
+		err = fuse_handle_bpf_prog(&bpf_arg, NULL, &get_fuse_inode(*inode)->bpf);
+		if (err)
+			goto out;
 	} else
 #endif
 	{
@@ -565,6 +559,9 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 	}
 
 	err = -ENOMEM;
+#ifdef CONFIG_FUSE_BPF
+out_queue_forget:
+#endif
 	if (!*inode && outarg->nodeid) {
 		fuse_queue_forget(fm->fc, forget, outarg->nodeid, 1);
 		goto out;
