@@ -1089,6 +1089,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
         if (!strcmp(event,NTF_EVENT_SLEEP)) {
 		// screen off also should indicate gesture can be done again...
+		in_gesture_finger_counter = 0;
 		screen_off_after_gesture = true;
 		finger_counter = 0;
         }
