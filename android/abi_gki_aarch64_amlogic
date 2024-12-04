@@ -964,6 +964,7 @@
   hdmi_drm_infoframe_init
   hdmi_drm_infoframe_pack
   hdmi_infoframe_unpack
+  hdmi_spd_infoframe_init
   hdmi_spd_infoframe_pack
   hdmi_vendor_infoframe_init
   hdmi_vendor_infoframe_pack
