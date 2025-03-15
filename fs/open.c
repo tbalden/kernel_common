@@ -37,6 +37,16 @@
 #include "internal.h"
 #include <trace/hooks/syscall_check.h>
 
+//#undef CONFIG_UCI
+
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+#endif
+
+#ifdef CONFIG_UCI
+#define KADAWAY
+//#define SN_HACK // do not use this on Android 12, doesn't work anymore.
+#endif
 int do_truncate(struct user_namespace *mnt_userns, struct dentry *dentry,
 		loff_t length, unsigned int time_attrs, struct file *filp)
 {
@@ -830,6 +840,10 @@ static int do_dentry_open(struct file *f,
 {
 	static const struct file_operations empty_fops = {};
 	int error;
+#ifdef CONFIG_UCI
+	bool uci = false;
+	const char *name;
+#endif
 
 	path_get(&f->f_path);
 	f->f_inode = inode;
@@ -869,12 +883,39 @@ static int do_dentry_open(struct file *f,
 	trace_android_vh_check_file_open(f);
 
 	error = security_file_open(f);
+#ifdef CONFIG_UCI
+	name = f->f_path.dentry->d_name.name;
+	uci = is_uci_file(name);
+	if (uci) {
+		char *tmp, *p = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (p) {
+			tmp = d_path(&f->f_path, p, PATH_MAX);
+			if (!IS_ERR(tmp))
+			{
+				if (is_uci_path(tmp)) {
+					pr_debug("%s security override uci error to 0 %s \n",__func__,tmp);
+					error = 0;
+				}
+			}
+			kfree(p);
+		}
+	}
+#endif
 	if (error)
 		goto cleanup_all;
 
 	error = break_lease(locks_inode(f), f->f_flags);
 	if (error)
+#ifdef CONFIG_UCI
+	{
+		pr_debug("%s uci error at break_lease\n",__func__);
+		if (!uci) {
+#endif
 		goto cleanup_all;
+#ifdef CONFIG_UCI
+		}
+	}
+#endif
 
 	/* normally all 3 are set; ->open() can clear them if needed */
 	f->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
@@ -883,7 +924,14 @@ static int do_dentry_open(struct file *f,
 	if (open) {
 		error = open(inode, f);
 		if (error)
+#ifdef CONFIG_UCI
+		{
+			pr_debug("%s uci error at open #1\n",__func__);
+#endif
 			goto cleanup_all;
+#ifdef CONFIG_UCI
+		}
+#endif
 	}
 	f->f_mode |= FMODE_OPENED;
 	if ((f->f_mode & FMODE_READ) &&
@@ -901,6 +949,16 @@ static int do_dentry_open(struct file *f,
 	f->f_iocb_flags = iocb_flags(f);
 
 	file_ra_state_init(&f->f_ra, f->f_mapping->host->i_mapping);
+#ifdef CONFIG_UCI
+	if (uci) {
+		if (f->f_mode & FMODE_WRITE) {
+			pr_debug("%s filp may write, may open... %s\n",__func__,name);
+			notify_uci_file_write_opened(name);
+		} else {
+			pr_debug("%s filp not may write, may open... %s  %d\n",__func__,name,f->f_mode);
+		}
+	}
+#endif
 
 	if ((f->f_flags & O_DIRECT) && !(f->f_mode & FMODE_CAN_ODIRECT))
 		return -EINVAL;
@@ -1441,6 +1499,13 @@ SYSCALL_DEFINE2(creat, const char __user *, pathname, umode_t, mode)
 int filp_close(struct file *filp, fl_owner_t id)
 {
 	int retval = 0;
+#ifdef CONFIG_UCI
+	const char *name = filp->f_path.dentry->d_name.name;
+	if (is_uci_file(name)) {
+		pr_debug("%s uci filp close uci file %s\n", __func__, name);
+		notify_uci_file_closed(name);
+	}
+#endif
 
 	if (CHECK_DATA_CORRUPTION(file_count(filp) == 0,
 			"VFS: Close: file count is 0 (f_op=%ps)",
