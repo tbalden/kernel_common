@@ -221,7 +221,7 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 	if (!name)
 		return;
 #ifdef CONFIG_UCI
-	if (!strstr(name,"CAIMAN")) is_pro = false;
+	if (!strstr(name,"HUSKY")) is_pro = false;
 #endif
 	pr_info("Machine model: %s\n", name);
 	dump_stack_set_arch_desc("%s (DT)", name);
