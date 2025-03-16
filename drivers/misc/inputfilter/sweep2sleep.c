@@ -27,22 +27,13 @@
 #define FILTER_ONLY_AFTER_SOME_TOUCH_EVENTS
 
 
-// in case of drivers that filter touch events like with offload google input driver...
-#define DIRECT_INPUT
-
-#ifdef DIRECT_INPUT
-static bool direct_input_driver = false; // set this true, if the ts driver uses s2s_direct_input
-static int first_touch_id_down = 0;
-#endif
-
-
 //sweep2sleep
 #define S2S_PWRKEY_DUR         20
 
 #if 1
-// 3120x1440 P8PRO 2992x1344
-static int S2S_Y_MAX = 2992;
-static int S2S_X_MAX = 1344;
+// 3120x1440 P6PRO
+static int S2S_Y_MAX = 3120;
+static int S2S_X_MAX = 1440;
 static int S2S_X_LEFT_CORNER_END = 150;
 static int S2S_X_RIGHT_CORNER_START = 1290; // 1080-110
 
@@ -168,15 +159,15 @@ static int get_s2s_y_above(void) {
 }
 #endif
 
-extern bool machine_is_pro(void);
+extern bool machine_is_cheetah(void);
 
 // device specifics
 static void s2s_setup_values(void) {
-	if (machine_is_pro()) {
-		pr_info("%s hw pro version\n",__func__);
+	if (machine_is_cheetah()) {
+		pr_info("%s hw cheetah\n",__func__);
 		// leave original values
-	} else {
-                pr_info("%s hw non pro version\n",__func__);
+	} else {	
+                pr_info("%s hw panther\n",__func__);
 		S2S_Y_MAX = 2400;
 		S2S_X_MAX = 1080;
 		S2S_X_LEFT_CORNER_END = 100;
@@ -671,9 +662,8 @@ static bool filtering_on(void) {
 }
 #endif
 
-
 static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
-				unsigned int code, int value, bool direct_input, unsigned char touchId) {
+				unsigned int code, int value) {
 	bool first_touch_detection = false;
 
 	if (!setup_done) {
@@ -696,49 +686,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 	if (log_throttling_count%50==49) log_throttling_count = 0;
 #endif
 
-#ifdef DIRECT_INPUT
-	if (direct_input_driver) // only do this part if direct_input is actually sent by ts driver like with fts driver
-	if (!direct_input) { // in DIRECT_INPUT mode, real input device events shouldn't be processed, 
-		//as secondary s2s_direct_input_calls are called from driver also
-#ifdef FULL_FILTER
-		return filtering_on();
-#else
-		return false;
-#endif
-	}
-#endif
-
-#ifdef DIRECT_INPUT
-	if (direct_input_driver) // only do this part if direct_input is actually sent by ts driver like with fts driver
-	if (touchId!=0) { // more than 1 finger down
-		touch_down_called = false;
-		touch_x_called = false;
-		touch_y_called = false;
-		sweep2sleep_reset(false);
-#ifdef CONFIG_DEBUG_S2S
-		pr_info("%s S2S_EVENT: untouch based on touch id...\n",__func__);
-#endif
-#ifdef FULL_FILTER
-		return filtering_on();
-#else
-		return false;
-#endif
-	}
-#endif
-
 	if (type == EV_KEY && code == BTN_TOUCH && value == 1) {
-#ifdef DIRECT_INPUT
-		if (direct_input_driver)
-		if (first_touch_id_down) { // first touch id touch detection already done earlier... return here
-#ifdef FULL_FILTER
-			return filtering_on();
-#else
-			return false;
-#endif
-		}
-		first_touch_id_down = true; // first touch id (0) first time touch event from s2s_direct_input call
-#endif
-
 #ifdef FULL_FILTER
 		if (filtering_on()) {
 			in_gesture_finger_counter++;
@@ -789,9 +737,6 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 		touch_down_called = false;
 		touch_x_called = false;
 		touch_y_called = false;
-#ifdef DIRECT_INPUT
-		first_touch_id_down = 0;
-#endif
 		reset_longtap_tracking();
 		if (last_tap_starts_in_dt_area) {
 			int delta_x = last_tap_coord_x - touch_x;
@@ -1018,7 +963,7 @@ static bool __s2s_input_filter(struct input_handle *handle, unsigned int type,
 }
 static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
-	bool ret = __s2s_input_filter(handle,type,code,value,false,0);
+	bool ret = __s2s_input_filter(handle,type,code,value);
 #ifdef CONFIG_DEBUG_S2S
 	pr_info("%s [FILTER] fresult=%s , type: %d code: %d value: %d\n",__func__,ret?"TRUE":"FALSE",type,code,value);
 #endif
@@ -1042,17 +987,6 @@ static bool s2s_input_filter(struct input_handle *handle, unsigned int type,
 static void s2s_input_event(struct input_handle *handle, unsigned int type,
                                 unsigned int code, int value) {
 }
-
-void s2s_direct_input(struct input_handle *handle, unsigned int type, unsigned int code, int value, unsigned char touch_id) {
-#ifdef DIRECT_INPUT
-#ifdef CONFIG_DEBUG_S2S
-	pr_info("%s s2s direct t: %u c: %u v: %d   touchId: %u \n",__func__, type, code, value, touch_id);
-#endif
-	__s2s_input_filter(handle, type, code, value, true, touch_id);
-#endif
-}
-EXPORT_SYMBOL_GPL(s2s_direct_input);
-
 
 static void uci_sys_listener(void) {
 	if (!!uci_get_sys_property_int_mm("locked", 0, 0, 1)==false) {
@@ -1089,7 +1023,6 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
         if (!strcmp(event,NTF_EVENT_SLEEP)) {
 		// screen off also should indicate gesture can be done again...
-		in_gesture_finger_counter = 0;
 		screen_off_after_gesture = true;
 		finger_counter = 0;
         }
@@ -1099,7 +1032,6 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 #ifdef CONFIG_DEBUG_S2S
 		pr_info("%s [screen_wake], setting screen on before touch events...\n",__func__);
 #endif
-		in_gesture_finger_counter = 0;
 		screen_on_but_before_touch_events = true;
 		screen_on_untouch_events_after = 0;
 	}
@@ -1123,27 +1055,15 @@ static int input_dev_filter(struct input_dev *dev) {
 		return 0;
 	} else
 	if (strstr(dev->name, "fts")) {
-#ifdef DIRECT_INPUT
-		direct_input_driver = true;
-		pr_info("%s set direct input true.\n",__func__);
-#endif
 		return 0;
 	} else
 	if (strstr(dev->name, "ftm")) {
-#ifdef DIRECT_INPUT
-		direct_input_driver = true;
-		pr_info("%s set direct input true.\n",__func__);
-#endif
 		return 0;
 	} else
 	if (strstr(dev->name, "touchpanel")) { // oneplus driver
 		return 0;
 	} else
 	if (strstr(dev->name, "sec_touchscreen")) {
-#ifdef DIRECT_INPUT
-		direct_input_driver = false;
-		pr_info("%s set direct input false.\n",__func__);
-#endif
 		return 0;
 	} else {
 		pr_info("%s sweep2sleep device filter check. Device didn't match any! %s\n",__func__,dev->name);

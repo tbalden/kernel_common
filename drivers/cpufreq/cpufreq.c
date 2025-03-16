@@ -39,45 +39,62 @@
 #include <linux/notification/notification.h>
 
 /*
-husky:/sys/devices/system/cpu/cpufreq $ cat policy0/scaling_available_frequencies
-324000 610000 820000 955000 1098000 1197000 1328000 1425000 1548000 1704000
-
-husky:/sys/devices/system/cpu/cpufreq $ cat policy4/scaling_available_frequencies
-402000 578000 697000 712000 910000 1065000 1221000 1328000 1418000 1572000 1836000 1945000 2130000 2245000 2367000
-
-husky:/sys/devices/system/cpu/cpufreq $ cat policy8/scaling_available_frequencies
-500000 880000 1164000 1298000 1557000 1745000 1885000 2049000 2147000 2294000 2363000 2556000 2687000 2850000 2914000
+cheetah:/sys/devices/system/cpu/cpufreq $ cat policy0/scaling_available_frequencies
+300000 574000 738000 930000 1098000 1197000 1328000 1401000 1598000 1704000 1803000
+cheetah:/sys/devices/system/cpu/cpufreq $ cat policy4/scaling_available_frequencies
+400000 553000 696000 799000 910000 1024000 1197000 1328000 1491000 1663000 1836000 1999000 2130000 2253000 2348000
+cheetah:/sys/devices/system/cpu/cpufreq $ cat policy6/scaling_available_frequencies
+500000 851000 984000 1106000 1277000 1426000 1582000 1745000 1826000 2048000 2188000 2252000 2401000 2507000 2630000 2704000 2802000 2850000
 */
 
 // saver 1
-#define LVL1_LITTLE 1548000
-#define LVL1_BIG    1945000
-#define LVL1_PRIME  2556000
+#define LVL1_LITTLE 1704000
+#define LVL1_BIG    2130000
+#define LVL1_PRIME  2401000
 
 // saver 2
-#define LVL2_LITTLE 1425000
+#define LVL2_LITTLE 1598000
 #define LVL2_BIG    1836000
-#define LVL2_PRIME  2147000
+#define LVL2_PRIME  2188000
 
 // saver 3
-#define LVL3_LITTLE 1328000
-#define LVL3_BIG    1572000
-#define LVL3_PRIME  1885000
+#define LVL3_LITTLE 1401000
+#define LVL3_BIG    1491000
+#define LVL3_PRIME  1745000
 
 static int batterysaver = 0; // 0 - 1 - 3
 // default 0, seriously cutting back max freqs for sunshine inside car/long gps tracking...
 // 1 medium cutback, 2 full cutback, 3 full cutback and disable touch freq min boost
 static int batterysaver_level = 0; // 0 - 1 - 3
 static bool batterysaver_touch_limiting = false;
+static bool batterysaver_skip_only_google_cam = false;
+static bool batterysaver_no_skip = false;
+static bool gcam_detected = false;
 #define BATTERY_SAVER_MAX_LEVEL 3
 
 static void uci_user_listener(void) {
     batterysaver = !!uci_get_user_property_int_mm("batterysaver", 0,0,1);
     batterysaver_level = uci_get_user_property_int_mm("batterysaver_level", 0,0,BATTERY_SAVER_MAX_LEVEL);
     batterysaver_touch_limiting = !!uci_get_user_property_int_mm("batterysaver_touch_limiting", 0,0,1);
+    batterysaver_skip_only_google_cam = !!uci_get_user_property_int_mm("batterysaver_skip_only_google_cam", 0,0,1);
+    batterysaver_no_skip = !!uci_get_user_property_int_mm("batterysaver_no_skip", 0,0,1);
 }
 
-static bool suspend_batterysaver = false;
+static void uci_sys_listener(void) {
+	const char* new_fg_process0 = uci_get_sys_property_str("active_process0","");
+	if (new_fg_process0) {
+		if (strstr(new_fg_process0, "GoogleCamera")) {
+			gcam_detected = true;
+		} else {
+			gcam_detected = false;
+		}
+	} else {
+		gcam_detected = false;
+	}
+
+}
+
+static bool camera_on = false;
 
 static void ntf_listener(char* event, int num_param, char* str_param) {
         if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
@@ -88,10 +105,11 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
                 if (!!num_param) {
                         // camera on..
 			pr_info("%s suspending battery saver, camera on\n",__func__);
-			suspend_batterysaver = true;
+			gcam_detected = false;
+			camera_on = true;
 		} else {
 			pr_info("%s stop suspending battery saver, camera off\n",__func__);
-			suspend_batterysaver = false;
+			camera_on = false;
 		}
 	}
 }
@@ -596,31 +614,35 @@ EXPORT_SYMBOL_GPL(cpufreq_disable_fast_switch);
 
 #ifdef CONFIG_UCI
 
-#define NUM_OF_CORES 9
+#define NUM_OF_CORES 8
 
 // cpu max freqs for saver modes...
 static int batterysaver_max_freqs[BATTERY_SAVER_MAX_LEVEL][NUM_OF_CORES] = {
-	// little x 4 , big x 4, prime x 1 - clusters
+	// little x 4 , big x 2, prime x 2 - clusters
 	// saver 1
 	{ LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,LVL1_LITTLE,
-	LVL1_BIG,LVL1_BIG,LVL1_BIG,LVL1_BIG,
-	LVL1_PRIME },
+	LVL1_BIG,LVL1_BIG,
+	LVL1_PRIME,LVL1_PRIME },
 	// saver 2
 	{ LVL2_LITTLE,LVL2_LITTLE,LVL2_LITTLE,LVL2_LITTLE,
-	LVL2_BIG,LVL2_BIG,LVL2_BIG,LVL2_BIG,
-	LVL2_PRIME },
+	LVL2_BIG,LVL2_BIG,
+	LVL2_PRIME,LVL2_PRIME },
 	// saver 3
 	{ LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,LVL3_LITTLE,
-	LVL3_BIG,LVL3_BIG,LVL3_BIG,LVL3_BIG,
-	LVL3_PRIME }
+	LVL3_BIG,LVL3_BIG,
+	LVL3_PRIME,LVL3_PRIME }
 };
 
 static int get_cpu_max_for_core(unsigned int cpu, int batterysaverlevel) {
-	if (cpu<=(NUM_OF_CORES-1) && batterysaverlevel>0 && batterysaverlevel<=BATTERY_SAVER_MAX_LEVEL) {
+	if (cpu<=7 && batterysaverlevel>0 && batterysaverlevel<=BATTERY_SAVER_MAX_LEVEL) {
 		return batterysaver_max_freqs[batterysaverlevel-1][cpu];
 	} else {
 	    return -EINVAL;
 	}
+}
+
+static bool get_suspend_saving(void) {
+	return camera_on && (!batterysaver_skip_only_google_cam || gcam_detected) && !batterysaver_no_skip;
 }
 #endif
 
@@ -631,7 +653,8 @@ static unsigned int __resolve_freq(struct cpufreq_policy *policy,
 	unsigned int old_target_freq = target_freq;
 
 #ifdef CONFIG_UCI
-	if (!suspend_batterysaver && batterysaver>0) {
+	bool suspend_saving = get_suspend_saving();
+	if (!suspend_saving && batterysaver>0) {
 		unsigned int cpu = policy->cpu;
 		int max = 0;
 		max = get_cpu_max_for_core(cpu,batterysaver_level);
@@ -2676,6 +2699,9 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	struct cpufreq_policy_data new_data;
 	struct cpufreq_governor *old_gov;
 	int ret;
+#ifdef CONFIG_UCI
+	bool suspend_saving = get_suspend_saving();
+#endif
 
 	memcpy(&new_data.cpuinfo, &policy->cpuinfo, sizeof(policy->cpuinfo));
 	new_data.freq_table = policy->freq_table;
@@ -2708,7 +2734,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	policy->min = __resolve_freq(policy, policy->min, CPUFREQ_RELATION_L);
 	policy->max = __resolve_freq(policy, policy->max, CPUFREQ_RELATION_H);
 #ifdef CONFIG_UCI
-	if (!suspend_batterysaver && batterysaver && batterysaver_touch_limiting) {
+	if (!suspend_saving && batterysaver && batterysaver_touch_limiting) {
 		unsigned int cpu = policy->cpu;
 		int max = 0;
 		pr_debug("%s [cleanslate_policy] new min and max freqs are %u - %u kHz\n",__func__,
@@ -3106,6 +3132,7 @@ static int __init cpufreq_core_init(void)
 
 #ifdef CONFIG_UCI
 	uci_add_user_listener(uci_user_listener);
+	uci_add_sys_listener(uci_sys_listener);
 	ntf_add_listener(ntf_listener);
 #endif
 	return 0;

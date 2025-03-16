@@ -52,8 +52,7 @@
 //#define RUN_RESET_PROPS_AFTER_DECRYPT
 
 #define USE_LOCK_HIDE
-
-//#define USE_5G_VOLTE_PROP
+#define USE_5G_VOLTE_PROP
 //#define USE_PIXEL_PROP
 //#define BLOCK_SU
 

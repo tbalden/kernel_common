@@ -183,11 +183,11 @@ asmlinkage void __init early_fdt_map(u64 dt_phys)
 	early_fdt_ptr = fixmap_remap_fdt(dt_phys, &fdt_size, PAGE_KERNEL);
 }
 #ifdef CONFIG_UCI
-static bool is_pro = true;
-bool machine_is_pro(void) {
-	return is_pro;
+static bool is_cheetah = true;
+bool machine_is_cheetah(void) {
+	return is_cheetah;
 }
-EXPORT_SYMBOL(machine_is_pro);
+EXPORT_SYMBOL(machine_is_cheetah);
 #endif
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
@@ -221,7 +221,7 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 	if (!name)
 		return;
 #ifdef CONFIG_UCI
-	if (!strstr(name,"HUSKY")) is_pro = false;
+	if (!strstr(name,"CHEETAH")) is_cheetah = false;
 #endif
 	pr_info("Machine model: %s\n", name);
 	dump_stack_set_arch_desc("%s (DT)", name);
