@@ -40,7 +40,7 @@ static int first_touch_id_down = 0;
 #define S2S_PWRKEY_DUR         20
 
 #if 1
-// 3120x1440 P9PROXL 2992x1344
+// 3120x1440 P8PRO 2992x1344
 static int S2S_Y_MAX = 2992;
 static int S2S_X_MAX = 1344;
 static int S2S_X_LEFT_CORNER_END = 150;
@@ -172,15 +172,15 @@ extern bool machine_is_pro(void);
 
 // device specifics
 static void s2s_setup_values(void) {
-	if (!machine_is_pro()) {
-		pr_info("%s hw komodo pro xl version\n",__func__);
+	if (machine_is_pro()) {
+		pr_info("%s hw pro version\n",__func__);
 		// leave original values
 	} else {
-                pr_info("%s hw caiman pro version\n",__func__);
-		S2S_Y_MAX = 2856;
-		S2S_X_MAX = 1280;
+                pr_info("%s hw non pro version\n",__func__);
+		S2S_Y_MAX = 2400;
+		S2S_X_MAX = 1080;
 		S2S_X_LEFT_CORNER_END = 100;
-		S2S_X_RIGHT_CORNER_START = 1280-100;
+		S2S_X_RIGHT_CORNER_START = 1080-100;
 	}
 }
 
