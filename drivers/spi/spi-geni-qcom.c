@@ -1117,9 +1117,6 @@ static int spi_geni_probe(struct platform_device *pdev)
 	if (device_property_read_bool(&pdev->dev, "spi-slave"))
 		spi->slave = true;
 
-	if (device_property_read_bool(&pdev->dev, "spi-slave"))
-		spi->slave = true;
-
 	ret = geni_icc_get(&mas->se, NULL);
 	if (ret)
 		return ret;
